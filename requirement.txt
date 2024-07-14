@@ -2,3 +2,5 @@ torch
 transformer
 streamlit
 assemblyai
+pydub
+gtts

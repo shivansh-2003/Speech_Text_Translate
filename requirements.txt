@@ -1,8 +1,8 @@
 streamlit
 transformers
-gtts
 assemblyai
 pydub
 torch
 requests
 aiohttp
+gtts

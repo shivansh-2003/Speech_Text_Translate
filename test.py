@@ -1,28 +1,71 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from gtts import gTTS
+from transformers import pipeline
 import assemblyai as aai
 import os
+import io
+from pydub import AudioSegment
+
+# For adding custom HTML and JavaScript
+def inject_custom_css():
+    st.markdown("""
+    <style>
+    .stButton>button {
+        background-color: #ff4b4b;
+        color: white;
+        border-radius: 5px;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        transform: scale(1.1);
+        background-color: #ff7b7b;
+    }
+    .header-text {
+        font-family: 'Courier New', Courier, monospace;
+        color: #1f77b4;
+    }
+    .animated-element {
+        animation: fadeIn 2s ease-in-out;
+    }
+    @keyframes fadeIn {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+def inject_javascript_animation():
+    st.markdown("""
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var textWrapper = document.querySelector('.ml9 .letters');
+            textWrapper.innerHTML = textWrapper.textContent.replace(/([^\x00-\x80]|\w)/g, "<span class='letter'>$&</span>");
+
+            anime.timeline({loop: true})
+            .add({
+                targets: '.ml9 .letter',
+                scale: [0, 1],
+                duration: 1500,
+                elasticity: 600,
+                delay: (el, i) => 45 * (i+1)
+            }).add({
+                targets: '.ml9',
+                opacity: 0,
+                duration: 1000,
+                easing: "easeOutExpo",
+                delay: 1000
+            });
+        });
+    </script>
+    """, unsafe_allow_html=True)
 
 # Set AssemblyAI API key
-aai.settings.api_key ="YOUR_API_KEY"
+aai.settings.api_key = "639595d69b8645fd9adfad1224f8907c"
 
 # Initialize the summarizer pipeline
 summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
-# Load the tokenizer and model for translation
-tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
-model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
-
-
-# Supported languages and their codes
-language_options = {
-    "English": "eng_Latn",
-    "Spanish": "spa_Latn",
-    "German": "deu_Latn",
-    "French": "fra_Latn",
-    "Chinese": "zho_Hans",
-    "Hindi": "hin_Deva"
-}
 
 def transcribe_audio(file_path):
     try:
@@ -32,6 +75,27 @@ def transcribe_audio(file_path):
     except Exception as e:
         st.error(f"Error in transcription: {e}")
         return None
+
+
+def text_to_speech(text, language='en'):
+    tts = gTTS(text=text, lang=language, slow=False)
+    audio_bytes = io.BytesIO()
+    tts.write_to_fp(audio_bytes)
+    audio_bytes.seek(0)
+    return audio_bytes
+
+
+def summarize_text(text):
+    try:
+        chunks = split_text(text)
+        summaries = [summarizer(chunk, max_length=130, min_length=30, do_sample=False)[0]['summary_text'] for chunk in
+                     chunks]
+        bullet_points = "\n".join([f"- {summary}" for summary in summaries])
+        return bullet_points
+    except Exception as e:
+        st.error(f"Error in summarization: {e}")
+        return "Summary could not be generated."
+
 
 def split_text(text, max_length=1000):
     """Splits text into chunks of a specified maximum length."""
@@ -51,80 +115,92 @@ def split_text(text, max_length=1000):
         chunks.append(" ".join(current_chunk))
     return chunks
 
-def summarize_text(text):
-    try:
-        chunks = split_text(text)
-        summaries = [summarizer(chunk, max_length=130, min_length=30, do_sample=False)[0]['summary_text'] for chunk in chunks]
-        bullet_points = "\n".join([f"- {summary}" for summary in summaries])
-        return bullet_points
-    except Exception as e:
-        st.error(f"Error in summarization: {e}")
-        return "Summary could not be generated."
-
-def translate_text(text, target_language):
-    try:
-        inputs = tokenizer(text, return_tensors="pt", padding=True)
-        translated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id[target_language])
-        translated_text = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
-        return translated_text
-    except Exception as e:
-        st.error(f"Error in translation: {e}")
-        return "Translation could not be generated."
 
 def main():
-    st.title("Audio Transcription, Translation, and Summarization")
+    # Set page config for title and icon
+    st.set_page_config(page_title="Speech and Text App", page_icon="🔊", layout="centered")
 
-    # File upload
-    uploaded_file = st.file_uploader("Choose an audio file...", type=["mp3"])
+    # Inject custom CSS and JS
+    inject_custom_css()
+    inject_javascript_animation()
 
-    if 'transcript_text' not in st.session_state:
-        st.session_state.transcript_text = ""
-    if 'summary_text' not in st.session_state:
-        st.session_state.summary_text = ""
-    if 'translated_text' not in st.session_state:
-        st.session_state.translated_text = ""
+    st.markdown("<h1 class='header-text'>🔊 Speech-to-Text and Text-to-Speech</h1>", unsafe_allow_html=True)
 
-    if uploaded_file is not None:
-        file_path = os.path.join("/tmp", uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+    # Create tabs for a more modern UI
+    tab1, tab2 = st.tabs(["🎙️ Speech-to-Text", "🗣️ Text-to-Speech"])
 
-        if st.button("Transcribe"):
-            with st.spinner('Transcribing audio...'):
-                st.session_state.transcript_text = transcribe_audio(file_path)
-                if st.session_state.transcript_text:
-                    st.write("Transcript:")
-                    st.write(st.session_state.transcript_text)
+    with tab1:
+        st.header("🎙️ Speech-to-Text")
+
+        # Use columns to structure layout better
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.info("Upload an audio file for transcription")
+            uploaded_file = st.file_uploader("Choose an audio file...", type=["mp3", "mp4", "wav", "m4a"])
+
+        with col2:
+            st.image("https://via.placeholder.com/150", caption="Upload Audio", use_column_width=True)
+
+        if uploaded_file is not None:
+            file_path = os.path.join("/tmp", uploaded_file.name)
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            if st.button("Transcribe"):
+                with st.spinner('Transcribing audio...'):
+                    transcript_text = transcribe_audio(file_path)
+                    if transcript_text:
+                        st.success("Transcription complete!")
+                        st.write("Transcript:")
+                        st.write(transcript_text)
+
+                        # Summarize the transcript
+                        st.subheader("Summary:")
+                        summary = summarize_text(transcript_text)
+                        st.write(summary)
+                    else:
+                        st.error("Transcription failed. Please try again.")
+
+    with tab2:
+        st.header("🗣️ Text-to-Speech")
+
+        # Use container for better organization
+        with st.container():
+            text_input = st.text_area("Enter text to convert to speech:")
+
+            languages = {
+                'English': 'en',
+                'Spanish': 'es',
+                'French': 'fr',
+                'German': 'de',
+                'Chinese': 'zh-cn',
+            }
+            selected_language = st.selectbox('Select Language', list(languages.keys()))
+            language_code = languages[selected_language]
+
+            # Add progress bar for better UX during conversion
+            if st.button("Convert"):
+                if text_input:
+                    with st.spinner('Converting text to speech...'):
+                        audio_bytes = text_to_speech(text_input, language=language_code)
+                        st.success("Conversion complete!")
+
+                        # Audio playback with a progress bar
+                        st.audio(audio_bytes, format='audio/mp3')
                 else:
-                    st.error("Transcription failed. Please try again.")
+                    st.warning("Please enter some text.")
 
-    if st.session_state.transcript_text:
-        st.write("Transcript:")
-        st.write(st.session_state.transcript_text)
+    # Use sidebar to add additional options or instructions
+    with st.sidebar:
+        st.subheader("About the App")
+        st.write("""
+        This app allows you to:
+        - Convert speech to text using AssemblyAI
+        - Summarize large text inputs using transformers
+        - Convert text to speech in multiple languages using GTTS.
+        """)
 
-        if st.button("Summarize"):
-            with st.spinner('Summarizing text...'):
-                st.session_state.summary_text = summarize_text(st.session_state.transcript_text)
-                st.write("Summary:")
-                st.markdown(st.session_state.summary_text)
-
-        target_language = st.selectbox("Translate Transcript to:", list(language_options.keys()))
-        if st.button("Translate Transcript"):
-            with st.spinner('Translating text...'):
-                st.session_state.translated_text = translate_text(st.session_state.transcript_text, language_options[target_language])
-                st.write(f"Translated Text ({target_language}):")
-                st.write(st.session_state.translated_text)
-
-    if st.session_state.summary_text:
-        st.write("Summary:")
-        st.markdown(st.session_state.summary_text)
-
-        target_language_summary = st.selectbox("Translate Summary to:", list(language_options.keys()))
-        if st.button("Translate Summary"):
-            with st.spinner('Translating summary...'):
-                st.session_state.translated_summary_text = translate_text(st.session_state.summary_text, language_options[target_language_summary])
-                st.write(f"Translated Summary ({target_language_summary}):")
-                st.write(st.session_state.translated_summary_text)
 
 if __name__ == "__main__":
     main()

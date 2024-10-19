@@ -6,6 +6,9 @@ import os
 import io
 from pydub import AudioSegment
 
+# Set page config for title and icon - Moved to the very top
+st.set_page_config(page_title="Speech and Text App", page_icon="🔊", layout="centered")
+
 # For adding custom HTML and JavaScript
 def inject_custom_css():
     st.markdown("""
@@ -63,10 +66,15 @@ def inject_javascript_animation():
 # Set AssemblyAI API key
 aai.settings.api_key = "639595d69b8645fd9adfad1224f8907c"
 
-# Initialize the summarizer pipeline
-summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+# Cache model loading to avoid reloading on every interaction
+@st.cache_data
+def load_summarizer():
+    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
+summarizer = load_summarizer()
 
+# Cache transcription function
+@st.cache_data
 def transcribe_audio(file_path):
     try:
         transcriber = aai.Transcriber()
@@ -76,14 +84,13 @@ def transcribe_audio(file_path):
         st.error(f"Error in transcription: {e}")
         return None
 
-
+# Function to convert text to speech
 def text_to_speech(text, language='en'):
     tts = gTTS(text=text, lang=language, slow=False)
     audio_bytes = io.BytesIO()
     tts.write_to_fp(audio_bytes)
     audio_bytes.seek(0)
     return audio_bytes
-
 
 def summarize_text(text):
     try:
@@ -96,9 +103,8 @@ def summarize_text(text):
         st.error(f"Error in summarization: {e}")
         return "Summary could not be generated."
 
-
+# Function to split text into chunks
 def split_text(text, max_length=1000):
-    """Splits text into chunks of a specified maximum length."""
     words = text.split()
     chunks = []
     current_chunk = []
@@ -115,11 +121,8 @@ def split_text(text, max_length=1000):
         chunks.append(" ".join(current_chunk))
     return chunks
 
-
+# Main function
 def main():
-    # Set page config for title and icon
-    st.set_page_config(page_title="Speech and Text App", page_icon="🔊", layout="centered")
-
     # Inject custom CSS and JS
     inject_custom_css()
     inject_javascript_animation()
